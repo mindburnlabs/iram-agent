@@ -7,7 +7,10 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    NUMBA_CACHE_DIR=/tmp/numba_cache \
+    NUMBA_DISABLE_CACHING=1 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -51,8 +54,9 @@ RUN playwright install chromium
 # Copy the application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p logs data cache
+# Create necessary directories with proper permissions
+RUN mkdir -p logs data cache /tmp/numba_cache /tmp/matplotlib && \
+    chmod -R 777 /tmp/numba_cache /tmp/matplotlib /tmp
 
 # Set proper permissions
 RUN chmod +x main.py

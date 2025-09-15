@@ -13,8 +13,16 @@ import logging
 # NLP imports
 from transformers import pipeline, AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
-from bertopic import BERTopic
 import torch
+
+# Try to import BERTopic, fallback if not available
+try:
+    from bertopic import BERTopic
+    BERTOPIC_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    print(f"Warning: BERTopic not available: {e}. Topic modeling will use fallback.")
+    BERTOPIC_AVAILABLE = False
+    BERTopic = None
 
 # Computer vision imports
 import cv2
@@ -206,11 +214,15 @@ class ContentAnalyzer:
             return {}
     
     def extract_topics(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract topics from text content using BERTopic."""
+        """Extract topics from text content using BERTopic or fallback method."""
         try:
             texts = self._extract_texts(data)
             if len(texts) < 3:  # Need minimum texts for topic modeling
                 return {"error": "Insufficient text data for topic modeling"}
+            
+            if not BERTOPIC_AVAILABLE:
+                # Fallback to simple keyword-based topic extraction
+                return self._extract_topics_fallback(texts)
             
             # Initialize topic model if needed
             if not self.topic_model:
@@ -244,6 +256,46 @@ class ContentAnalyzer:
             
         except Exception as e:
             logger.error(f"Topic extraction failed: {e}")
+            return {"error": str(e)}
+    
+    def _extract_topics_fallback(self, texts: List[str]) -> Dict[str, Any]:
+        """Fallback topic extraction using simple keyword frequency."""
+        try:
+            from collections import Counter
+            import string
+            
+            # Simple text processing
+            all_words = []
+            stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+            
+            for text in texts:
+                # Clean and tokenize
+                text = text.lower().translate(str.maketrans('', '', string.punctuation))
+                words = [word for word in text.split() if len(word) > 3 and word not in stop_words]
+                all_words.extend(words)
+            
+            # Find most common words as "topics"
+            word_counts = Counter(all_words)
+            top_words = word_counts.most_common(20)
+            
+            # Create simple topic groupings
+            topics = {
+                0: [word for word, count in top_words[:5]],
+                1: [word for word, count in top_words[5:10]],
+                2: [word for word, count in top_words[10:15]]
+            }
+            
+            return {
+                "analysis_type": "topics_fallback",
+                "topics": topics,
+                "note": "Using fallback topic extraction (BERTopic unavailable)",
+                "top_keywords": dict(top_words),
+                "total_texts": len(texts),
+                "analyzed_at": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Fallback topic extraction failed: {e}")
             return {"error": str(e)}
     
     def analyze_engagement(self, data: Dict[str, Any]) -> Dict[str, Any]:

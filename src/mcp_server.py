@@ -48,6 +48,8 @@ async def lifespan(app: FastAPI):
             "instagram_username": os.getenv("INSTAGRAM_USERNAME"),
             "instagram_password": os.getenv("INSTAGRAM_PASSWORD"),
             "openai_api_key": os.getenv("OPENAI_API_KEY"),
+            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
+            "llm_model": os.getenv("LLM_MODEL", "openrouter/sonoma-sky-alpha"),
             "debug": os.getenv("DEBUG", "false").lower() == "true",
         }
         

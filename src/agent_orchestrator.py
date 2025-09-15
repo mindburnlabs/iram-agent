@@ -39,8 +39,8 @@ class ResearchTool(BaseTool):
     Input should be a JSON string with 'query' and 'type' fields.
     """
     
-    def __init__(self, scraper: InstagramScraper):
-        super().__init__()
+    def __init__(self, scraper: InstagramScraper, **kwargs):
+        super().__init__(**kwargs)
         self.scraper = scraper
     
     def _run(
@@ -84,8 +84,8 @@ class ScrapeTool(BaseTool):
     Input should be a JSON string with 'target', 'content_type', and optional 'limit' fields.
     """
     
-    def __init__(self, scraper: InstagramScraper):
-        super().__init__()
+    def __init__(self, scraper: InstagramScraper, **kwargs):
+        super().__init__(**kwargs)
         self.scraper = scraper
     
     def _run(
@@ -127,8 +127,8 @@ class AnalyzeTool(BaseTool):
     Input should be a JSON string with 'data' and 'analysis_type' fields.
     """
     
-    def __init__(self, analyzer: ContentAnalyzer):
-        super().__init__()
+    def __init__(self, analyzer: ContentAnalyzer, **kwargs):
+        super().__init__(**kwargs)
         self.analyzer = analyzer
     
     def _run(
@@ -173,11 +173,27 @@ class InstagramAgentOrchestrator:
         self.evasion_manager = EvasionManager(config=self.config)
         
         # Initialize LLM
-        self.llm = ChatOpenAI(
-            model=self.config.get("llm_model", "gpt-4"),
-            temperature=self.config.get("temperature", 0.1),
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
+        
+        if openrouter_key:
+            # Use OpenRouter
+            self.llm = ChatOpenAI(
+                model=self.config.get("llm_model") or os.getenv("LLM_MODEL", "openrouter/sonoma-sky-alpha"),
+                temperature=self.config.get("temperature", 0.1),
+                openai_api_key=openrouter_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                model_kwargs={"extra_headers": {"HTTP-Referer": "https://github.com/mindburnlabs/iram-agent"}}
+            )
+        elif openai_key:
+            # Fallback to OpenAI
+            self.llm = ChatOpenAI(
+                model=self.config.get("llm_model", "gpt-4"),
+                temperature=self.config.get("temperature", 0.1),
+                openai_api_key=openai_key
+            )
+        else:
+            raise ValueError("Either OPENROUTER_API_KEY or OPENAI_API_KEY must be set")
         
         # Initialize memory
         self.memory = ConversationBufferWindowMemory(
