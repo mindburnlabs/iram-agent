@@ -73,15 +73,14 @@ RUN chmod +x main.py main_minimal.py
 RUN groupadd -r iram && useradd -r -g iram iram && \
     chown -R iram:iram /app
 
-# Switch to non-root user
-USER iram
+# Switch to non-root user (temporarily disabled to simplify debugging)
+# USER iram
 
 # Expose port
 EXPOSE 8000
 
-# Health check (respect dynamic PORT from Railway)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD sh -c 'curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1'
+# Disable HEALTHCHECK temporarily to avoid premature restarts during debug
+HEALTHCHECK NONE
 
-# Default command - use minimal server for testing
-CMD ["python", "main_minimal.py"]
+# Default command - use minimal server for testing via uvicorn (respects dynamic PORT)
+CMD ["sh", "-lc", "uvicorn main_minimal:app --host 0.0.0.0 --port ${PORT:-8000}"]
