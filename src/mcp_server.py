@@ -31,8 +31,12 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
+# DB
+from .db import create_all, get_engine
+
 # Global variables
 agent_orchestrator: Optional[InstagramAgentOrchestrator] = None
+_db_ready: bool = False
 
 
 @asynccontextmanager
@@ -40,10 +44,23 @@ async def lifespan(app: FastAPI):
     """Manage the lifespan of the application."""
     global agent_orchestrator
 
-    # Startup
+# Startup
     logger.info("Starting IRAM MCP Server (lazy init mode)...")
     # Defer heavy initialization until the first request needing the agent
     agent_orchestrator = None
+
+    # Initialize DB schema if configured
+    global _db_ready
+    try:
+        created = await create_all()
+        _db_ready = bool(created)
+        if _db_ready:
+            logger.info("Database schema ensured")
+        else:
+            logger.info("Database URL not set; running without DB")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        _db_ready = False
 
     yield
 
@@ -126,16 +143,23 @@ def get_agent() -> InstagramAgentOrchestrator:
     return agent_orchestrator
 
 
-# Health check endpoint
+# Health and readiness endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "IRAM MCP Server",
-        "version": "1.0.0"
+    return {"status": "ok"}
+
+@app.get("/live")
+async def liveness():
+    return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/ready")
+async def readiness():
+    deps = {
+        "db": _db_ready,
+        "openrouter": bool(os.getenv("OPENROUTER_API_KEY")),
     }
+    ready = all([v if isinstance(v, bool) else True for v in deps.values()])
+    return {"ready": ready, "dependencies": deps, "timestamp": datetime.utcnow().isoformat()}
 
 
 # Main MCP endpoints
@@ -358,25 +382,57 @@ async def schedule_analysis(
     background_tasks: BackgroundTasks,
     agent: InstagramAgentOrchestrator = Depends(get_agent)
 ):
-    """Schedule a background analysis task."""
+    """Schedule a background analysis task and persist a job record if DB is configured."""
     try:
-        def run_background_task():
-            """Run the task in background."""
+        job_id = None
+        # Persist job record if DB available
+        if _db_ready:
+            from .db import session_scope
+            from .models import Job
+            async with session_scope() as session:
+                job = Job(task=request.task, status="queued", progress=0, payload=request.context or {})
+                session.add(job)
+                await session.flush()
+                job_id = job.id
+
+        def run_background_task(job_id_local: Optional[str]):
             try:
+                # Execute task
                 result = asyncio.run(agent.execute_task(request.task, request.context))
                 logger.info(f"Background task completed: {result}")
+                if _db_ready and job_id_local:
+                    from .db import session_scope
+                    from .models import Job
+                    async def _update():
+                        async with session_scope() as session:
+                            db_job = await session.get(Job, job_id_local)
+                            if db_job:
+                                db_job.status = "completed" if result.get("success") else "failed"
+                                db_job.progress = 100 if result.get("success") else db_job.progress
+                                db_job.result = result
+                    asyncio.run(_update())
             except Exception as e:
                 logger.error(f"Background task failed: {e}")
-        
-        background_tasks.add_task(run_background_task)
-        
+                if _db_ready and job_id_local:
+                    from .db import session_scope
+                    from .models import Job
+                    async def _fail():
+                        async with session_scope() as session:
+                            db_job = await session.get(Job, job_id_local)
+                            if db_job:
+                                db_job.status = "failed"
+                                db_job.error = {"message": str(e)}
+                    asyncio.run(_fail())
+
+        background_tasks.add_task(run_background_task, job_id)
+
         return JSONResponse(content={
             "success": True,
             "message": "Task scheduled for background execution",
             "task": request.task,
+            "job_id": job_id,
             "timestamp": datetime.utcnow().isoformat()
         })
-    
     except Exception as e:
         logger.error(f"Task scheduling failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -391,6 +447,7 @@ async def get_config():
         "version": "1.0.0",
         "environment": os.getenv("ENVIRONMENT", "development"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
+        "db_configured": bool(os.getenv("DATABASE_URL")),
         "features": {
             "instagram_scraping": True,
             "content_analysis": True,

@@ -20,3 +20,7 @@ langchain-community==0.0.10
 
 # Utilities
 python-multipart==0.0.6
+
+# Persistence
+SQLAlchemy==2.0.30
+asyncpg==0.29.0
