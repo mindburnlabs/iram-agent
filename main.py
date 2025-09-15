@@ -116,11 +116,15 @@ Examples:
             # Set environment variables if provided
             if hasattr(args, 'host') and args.host:
                 os.environ["HOST"] = args.host
-            if hasattr(args, 'port') and args.port:
+            # Railway provides PORT environment variable, don't override it unless explicitly set
+            if hasattr(args, 'port') and args.port and args.port != 8000:
                 os.environ["PORT"] = str(args.port)
+            elif not os.getenv("PORT"):
+                os.environ["PORT"] = "8000"
             if hasattr(args, 'debug') and args.debug:
                 os.environ["DEBUG"] = "true"
             
+            logger.info(f"Server will start on {os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT')}")
             start_server()
             
         elif args.command == "run":
@@ -148,7 +152,9 @@ def show_config():
     config_items = [
         ("Instagram Username", os.getenv("INSTAGRAM_USERNAME", "Not set")),
         ("Instagram Password", "Set" if os.getenv("INSTAGRAM_PASSWORD") else "Not set"),
+        ("OpenRouter API Key", "Set" if os.getenv("OPENROUTER_API_KEY") else "Not set"),
         ("OpenAI API Key", "Set" if os.getenv("OPENAI_API_KEY") else "Not set"),
+        ("LLM Model", os.getenv("LLM_MODEL", "openrouter/sonoma-sky-alpha")),
         ("Host", os.getenv("HOST", "0.0.0.0")),
         ("Port", os.getenv("PORT", "8000")),
         ("Debug", os.getenv("DEBUG", "false")),
@@ -210,14 +216,21 @@ def run_tests():
     
     # Test 4: Environment variables
     tests_total += 1
-    required_env_vars = ["INSTAGRAM_USERNAME", "INSTAGRAM_PASSWORD", "OPENAI_API_KEY"]
+    required_env_vars = ["INSTAGRAM_USERNAME", "INSTAGRAM_PASSWORD"]
+    ai_key_set = bool(os.getenv("OPENROUTER_API_KEY")) or bool(os.getenv("OPENAI_API_KEY"))
     missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     
-    if not missing_vars:
-        print("✅ All required environment variables set")
+    if not missing_vars and ai_key_set:
+        if os.getenv("OPENROUTER_API_KEY"):
+            print("✅ All required environment variables set (using OpenRouter)")
+        else:
+            print("✅ All required environment variables set (using OpenAI)")
         tests_passed += 1
     else:
-        print(f"❌ Missing environment variables: {', '.join(missing_vars)}")
+        missing_items = missing_vars.copy()
+        if not ai_key_set:
+            missing_items.append("OPENROUTER_API_KEY or OPENAI_API_KEY")
+        print(f"❌ Missing environment variables: {', '.join(missing_items)}")
     
     print(f"\nTests passed: {tests_passed}/{tests_total}")
     
