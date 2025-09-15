@@ -5,7 +5,7 @@ pydantic==2.5.0
 python-dotenv==1.0.0
 
 # Instagram scraping
-instagrapi==1.19.0
+instagrapi==1.19.8
 playwright==1.40.0
 
 # Basic analysis
