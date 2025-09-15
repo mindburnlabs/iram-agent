@@ -10,10 +10,23 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import logging
 
-# NLP imports
-from transformers import pipeline, AutoTokenizer, AutoModel
-from sentence_transformers import SentenceTransformer
-import torch
+# NLP imports - make them optional for minimal deployment
+try:
+    from transformers import pipeline, AutoTokenizer, AutoModel
+    import torch
+    TRANSFORMERS_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    print(f"Warning: Transformers not available: {e}. NLP will use basic fallback.")
+    TRANSFORMERS_AVAILABLE = False
+    pipeline, AutoTokenizer, AutoModel, torch = None, None, None, None
+
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    print(f"Warning: SentenceTransformers not available: {e}. Embeddings disabled.")
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    SentenceTransformer = None
 
 # Try to import BERTopic, fallback if not available
 try:
@@ -24,9 +37,9 @@ except (ImportError, RuntimeError) as e:
     BERTOPIC_AVAILABLE = False
     BERTopic = None
 
-# Computer vision imports
-import cv2
-from PIL import Image
+# Computer vision imports - disabled for minimal deployment
+# import cv2
+# from PIL import Image
 
 # Data processing
 import pandas as pd
@@ -55,19 +68,25 @@ class ContentAnalyzer:
         """Initialize NLP models."""
         try:
             # Sentiment analysis
-            self.sentiment_analyzer = pipeline(
-                "sentiment-analysis", 
-                model="cardiffnlp/twitter-roberta-base-sentiment-latest",
-                return_all_scores=True
-            )
+            if TRANSFORMERS_AVAILABLE:
+                self.sentiment_analyzer = pipeline(
+                    "sentiment-analysis", 
+                    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+                    return_all_scores=True
+                )
+            else:
+                self.sentiment_analyzer = None
             
             # Embedding model
-            self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+            if SENTENCE_TRANSFORMERS_AVAILABLE:
+                self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+            else:
+                self.sentence_model = None
             
             # Topic modeling
             self.topic_model = None  # Initialized on first use
             
-            logger.info("NLP models loaded successfully")
+            logger.info(f"NLP models initialized - Transformers: {TRANSFORMERS_AVAILABLE}, Embeddings: {SENTENCE_TRANSFORMERS_AVAILABLE}")
             
         except Exception as e:
             logger.error(f"Failed to initialize NLP models: {e}")
@@ -91,7 +110,7 @@ class ContentAnalyzer:
         """Analyze sentiment of text content."""
         try:
             if not self.sentiment_analyzer:
-                return {"error": "Sentiment analyzer not available"}
+                return self._analyze_sentiment_fallback(data)
             
             texts = self._extract_texts(data)
             if not texts:
@@ -212,6 +231,68 @@ class ContentAnalyzer:
         except Exception as e:
             logger.error(f"Overall sentiment calculation failed: {e}")
             return {}
+    
+    def _analyze_sentiment_fallback(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Basic sentiment analysis using simple keyword matching."""
+        try:
+            texts = self._extract_texts(data)
+            if not texts:
+                return {"error": "No text content found"}
+            
+            positive_words = ['good', 'great', 'awesome', 'amazing', 'love', 'like', 'happy', 'excellent', 'wonderful']
+            negative_words = ['bad', 'terrible', 'awful', 'hate', 'dislike', 'sad', 'angry', 'horrible', 'disgusting']
+            
+            results = []
+            overall_scores = {'positive': 0, 'negative': 0, 'neutral': 0}
+            
+            for text in texts:
+                text_lower = text.lower()
+                positive_count = sum(1 for word in positive_words if word in text_lower)
+                negative_count = sum(1 for word in negative_words if word in text_lower)
+                
+                if positive_count > negative_count:
+                    sentiment = 'positive'
+                    confidence = min(0.8, 0.5 + positive_count * 0.1)
+                    overall_scores['positive'] += 1
+                elif negative_count > positive_count:
+                    sentiment = 'negative'
+                    confidence = min(0.8, 0.5 + negative_count * 0.1)
+                    overall_scores['negative'] += 1
+                else:
+                    sentiment = 'neutral'
+                    confidence = 0.6
+                    overall_scores['neutral'] += 1
+                
+                results.append({
+                    "text": text[:100] + "..." if len(text) > 100 else text,
+                    "sentiment": sentiment,
+                    "confidence": confidence,
+                    "method": "keyword_fallback"
+                })
+            
+            total_texts = len(results)
+            overall_sentiment = {
+                "positive": {"average": overall_scores['positive'] / total_texts, "count": overall_scores['positive']},
+                "negative": {"average": overall_scores['negative'] / total_texts, "count": overall_scores['negative']},
+                "neutral": {"average": overall_scores['neutral'] / total_texts, "count": overall_scores['neutral']}
+            }
+            
+            dominant = max(overall_sentiment.keys(), key=lambda k: overall_sentiment[k]["average"])
+            overall_sentiment["dominant_sentiment"] = dominant
+            overall_sentiment["confidence"] = overall_sentiment[dominant]["average"]
+            
+            return {
+                "analysis_type": "sentiment_fallback",
+                "individual_results": results,
+                "overall_sentiment": overall_sentiment,
+                "total_texts": len(results),
+                "note": "Using fallback sentiment analysis (Transformers unavailable)",
+                "analyzed_at": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Fallback sentiment analysis failed: {e}")
+            return {"error": str(e)}
     
     def extract_topics(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract topics from text content using BERTopic or fallback method."""
