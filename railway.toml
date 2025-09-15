@@ -1,0 +1,17 @@
+[build]
+builder = "dockerfile"
+dockerfile = "Dockerfile"
+
+[deploy]
+start_command = "python main.py server"
+healthcheck_path = "/health"
+healthcheck_timeout = 30
+
+[variables]
+ENVIRONMENT = "production"
+HOST = "0.0.0.0"
+PORT = "8000"
+LOG_LEVEL = "INFO"
+
+[services]
+iram-mcp-server = { build = { builder = "dockerfile" }, deploy = { start_command = "python main.py server" } }
