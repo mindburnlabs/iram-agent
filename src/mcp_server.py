@@ -39,29 +39,14 @@ agent_orchestrator: Optional[InstagramAgentOrchestrator] = None
 async def lifespan(app: FastAPI):
     """Manage the lifespan of the application."""
     global agent_orchestrator
-    
+
     # Startup
-    logger.info("Starting IRAM MCP Server...")
-    
-    try:
-        config = {
-            "instagram_username": os.getenv("INSTAGRAM_USERNAME"),
-            "instagram_password": os.getenv("INSTAGRAM_PASSWORD"),
-            "openai_api_key": os.getenv("OPENAI_API_KEY"),
-            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
-            "llm_model": os.getenv("LLM_MODEL", "openrouter/sonoma-sky-alpha"),
-            "debug": os.getenv("DEBUG", "false").lower() == "true",
-        }
-        
-        agent_orchestrator = create_instagram_agent(config)
-        logger.info("Agent orchestrator initialized successfully")
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize agent orchestrator: {e}")
-        raise
-    
+    logger.info("Starting IRAM MCP Server (lazy init mode)...")
+    # Defer heavy initialization until the first request needing the agent
+    agent_orchestrator = None
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down IRAM MCP Server...")
     if agent_orchestrator:
@@ -121,9 +106,23 @@ class ScrapeRequest(BaseModel):
 
 # Dependency to get agent orchestrator
 def get_agent() -> InstagramAgentOrchestrator:
-    """Get the agent orchestrator instance."""
-    if not agent_orchestrator:
-        raise HTTPException(status_code=500, detail="Agent orchestrator not initialized")
+    """Get or lazily create the agent orchestrator instance."""
+    global agent_orchestrator
+    if agent_orchestrator is None:
+        try:
+            config = {
+                "instagram_username": os.getenv("INSTAGRAM_USERNAME"),
+                "instagram_password": os.getenv("INSTAGRAM_PASSWORD"),
+                "openai_api_key": os.getenv("OPENAI_API_KEY"),
+                "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
+                "llm_model": os.getenv("LLM_MODEL", "openrouter/sonoma-sky-alpha"),
+                "debug": os.getenv("DEBUG", "false").lower() == "true",
+            }
+            agent_orchestrator = create_instagram_agent(config)
+            logger.info("Agent orchestrator initialized successfully (lazy)")
+        except Exception as e:
+            logger.error(f"Failed to initialize agent orchestrator: {e}")
+            raise HTTPException(status_code=500, detail="Agent initialization failed: " + str(e))
     return agent_orchestrator
 
 
