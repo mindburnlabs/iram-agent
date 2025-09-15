@@ -82,5 +82,5 @@ EXPOSE 8000
 # Disable HEALTHCHECK temporarily to avoid premature restarts during debug
 HEALTHCHECK NONE
 
-# Default command - use minimal server for testing via uvicorn (respects dynamic PORT)
-CMD ["sh", "-lc", "uvicorn main_minimal:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Default command - run full MCP server via uvicorn (respects dynamic PORT)
+CMD ["sh", "-lc", "uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}"]
