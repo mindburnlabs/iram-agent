@@ -48,8 +48,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
+# Install Playwright browsers (only if Playwright is installed)
+RUN python - <<'PY'
+import importlib.util, os, subprocess, sys
+spec = importlib.util.find_spec('playwright')
+if spec is not None:
+    print('Playwright detected, installing Chromium...')
+    subprocess.check_call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
+else:
+    print('Playwright not installed, skipping browser installation')
+PY
 
 # Copy the application code
 COPY . .
@@ -59,7 +67,7 @@ RUN mkdir -p logs data cache /tmp/numba_cache /tmp/matplotlib && \
     chmod -R 777 /tmp/numba_cache /tmp/matplotlib /tmp
 
 # Set proper permissions
-RUN chmod +x main.py
+RUN chmod +x main.py main_minimal.py
 
 # Create a non-root user for security
 RUN groupadd -r iram && useradd -r -g iram iram && \
@@ -71,9 +79,9 @@ USER iram
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check (respect dynamic PORT from Railway)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD sh -c 'curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1'
 
-# Default command
-CMD ["python", "main.py", "server"]
+# Default command - use minimal server for testing
+CMD ["python", "main_minimal.py"]
