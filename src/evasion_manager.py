@@ -10,11 +10,13 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+from collections import deque
 import logging
 
 from .utils import get_logger
+from .scraping_module import ProxyManager
 
 logger = get_logger(__name__)
 
@@ -26,22 +28,30 @@ class EvasionManager:
         """Initialize the evasion manager."""
         self.config = config or {}
         
-        # Request tracking
-        self.request_history = []
+        # Telemetry and state
+        self.request_history = deque(maxlen=2000) # Store more history
         self.last_request_time = 0
         self.consecutive_errors = 0
+        self.last_error_time = 0
         
         # ML model for risk prediction
-        self.risk_model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.risk_model = LogisticRegression(class_weight='balanced')
         self.scaler = StandardScaler()
         self.model_trained = False
         
+        # Proxy manager (if available)
+        self.proxy_manager = ProxyManager(config) if self.config.get("enable_proxy_rotation") else None
+        
+        # Adaptive backoff parameters
+        self.base_delay = 2.0
+        self.max_delay = 60.0
+        self.backoff_factor = 1.5
+        self.current_backoff = self.base_delay
+        
         # Evasion parameters
-        self.base_delay = 2.0  # Base delay in seconds
-        self.max_delay = 30.0  # Maximum delay
         self.error_cooldown = 60  # Cooldown after errors
         
-        logger.info("Evasion manager initialized")
+        logger.info("Advanced Evasion Manager initialized")
     
     async def apply_delay(self):
         """Apply intelligent delay based on current risk level."""
@@ -50,13 +60,13 @@ class EvasionManager:
             time_since_last = current_time - self.last_request_time
             
             # Calculate risk-based delay
-            risk_level = self.calculate_risk()
+            risk_level = self.predict_risk()
             delay = self.calculate_delay(risk_level)
             
             # Ensure minimum time between requests
             if time_since_last < delay:
                 sleep_time = delay - time_since_last
-                logger.debug(f"Applying evasion delay: {sleep_time:.2f}s (risk: {risk_level:.2f})")
+                logger.debug(f"Applying evasion delay: {sleep_time:.2f}s (risk: {risk_level:.2f}) (backoff: {self.current_backoff:.2f}s)")
                 await asyncio.sleep(sleep_time)
             
             self.last_request_time = time.time()
@@ -66,20 +76,27 @@ class EvasionManager:
             await asyncio.sleep(self.base_delay)
     
     def calculate_risk(self) -> float:
-        """Calculate current risk level based on request patterns."""
+        """Calculate current risk level based on heuristic request patterns."""
         try:
             if not self.request_history:
                 return 0.1  # Low risk for first request
             
-            # Simple risk calculation based on recent activity
-            recent_requests = len([r for r in self.request_history if time.time() - r['timestamp'] < 300])  # 5 minutes
-            error_rate = self.consecutive_errors / max(1, len(self.request_history))
+            # More sophisticated risk calculation based on recent activity
+            now = time.time()
+            recent_requests = len([r for r in self.request_history if now - r['timestamp'] < 300])  # 5 minutes
+            recent_errors = len([r for r in self.request_history if not r['success'] and now - r['timestamp'] < 600]) # 10 minutes
+            error_rate = recent_errors / max(1, len(self.request_history))
+            
+            # Time since last error
+            time_since_error = now - self.last_error_time if self.last_error_time else 3600
             
             # Risk factors
-            frequency_risk = min(recent_requests / 50, 1.0)  # High if > 50 requests in 5min
-            error_risk = min(error_rate * 2, 1.0)
+            frequency_risk = min(recent_requests / 50.0, 1.0)
+            error_risk = min(error_rate * 5.0, 1.0)
+            recency_risk = 1.0 - min(time_since_error / 1800.0, 1.0) # High risk if error in last 30min
             
-            total_risk = (frequency_risk + error_risk) / 2
+            # Combine risks with weights
+            total_risk = (frequency_risk * 0.4) + (error_risk * 0.4) + (recency_risk * 0.2)
             return min(total_risk, 1.0)
             
         except Exception as e:
@@ -87,21 +104,20 @@ class EvasionManager:
             return 0.5  # Medium risk as default
     
     def calculate_delay(self, risk_level: float) -> float:
-        """Calculate delay based on risk level."""
+        """Calculate delay based on risk level and adaptive backoff."""
         try:
-            # Base delay with risk multiplier
-            base = self.base_delay
-            risk_multiplier = 1 + (risk_level * 10)  # 1x to 11x multiplier
+            # Use current backoff as base, influenced by risk
+            risk_multiplier = 1 + (risk_level * 5)
             
             # Add randomization to avoid patterns
             randomization = random.uniform(0.8, 1.2)
             
-            delay = base * risk_multiplier * randomization
+            delay = self.current_backoff * risk_multiplier * randomization
             return min(delay, self.max_delay)
             
         except Exception as e:
             logger.error(f"Delay calculation failed: {e}")
-            return self.base_delay
+            return self.current_backoff
     
     def record_request(self, success: bool, response_time: float = 0, status_code: int = 200):
         """Record a request for pattern analysis."""
@@ -119,11 +135,21 @@ class EvasionManager:
             if len(self.request_history) > 1000:
                 self.request_history = self.request_history[-1000:]
             
-            # Update error tracking
+            # Update error tracking and adaptive backoff
             if success:
                 self.consecutive_errors = 0
+                # Gradually decrease backoff on success
+                self.current_backoff = max(self.base_delay, self.current_backoff / (self.backoff_factor * 0.5))
             else:
                 self.consecutive_errors += 1
+                self.last_error_time = request_data['timestamp']
+                # Increase backoff on error
+                self.current_backoff = min(self.max_delay, self.current_backoff * self.backoff_factor)
+                
+                # Potentially switch proxy on error
+                if self.proxy_manager and self.consecutive_errors > 2:
+                    self.proxy_manager.get_new_tor_identity() # If using Tor
+                    logger.info("Requesting new proxy due to consecutive errors")
             
             # Train model periodically
             if len(self.request_history) % 100 == 0:

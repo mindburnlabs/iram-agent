@@ -11,23 +11,38 @@ import os
 import sys
 from pathlib import Path
 
+import getpass
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.markdown import Markdown
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src.agent_orchestrator import create_instagram_agent
-from src.mcp_server import main as start_server
+from src.app import run_dev_server
 from src.utils import get_logger
+from src.config import get_config, IRamConfig
 
 logger = get_logger(__name__)
+console = Console()
 
 
-async def run_agent_task(task: str, username: str = None, output: str = None):
+async def run_agent_task(task: str, username: str = None, output: str = None, public_only: bool = False, rich_output: bool = False):
     """Run a specific agent task."""
     try:
-        logger.info(f"Initializing agent for task: {task}")
+        console.print(f"[bold cyan]Initializing agent for task:[/] {task}")
         
-        # Create agent
-        agent = create_instagram_agent()
+        # Create agent with public_only flag
+        config_overrides = {"instagram": {"public_fallback": public_only}}
+        agent = create_instagram_agent(config=config_overrides)
+        
+        # Prompt for credentials if not set
+        if not public_only and not agent.iram_config.has_instagram_auth():
+            prompt_for_credentials()
+            agent = create_instagram_agent(config=config_overrides) # Re-create with new creds
         
         # Execute based on task type
         if task == "analyze-account" and username:
@@ -42,23 +57,20 @@ async def run_agent_task(task: str, username: str = None, output: str = None):
             import json
             with open(output, 'w') as f:
                 json.dump(result, f, indent=2, default=str)
-            logger.info(f"Results saved to {output}")
+            console.print(f"[bold green]✅ Results saved to {output}[/]")
+        elif rich_output:
+            display_rich_results(result)
         else:
-            print("\n" + "="*60)
-            print("IRAM ANALYSIS RESULTS")
-            print("="*60)
-            
-            if result.get("success"):
-                print(f"✅ Task completed successfully")
-                if "result" in result:
-                    print(f"\nResult: {result['result']}")
-            else:
-                print(f"❌ Task failed: {result.get('error', 'Unknown error')}")
-            
-            print("="*60)
-        
+            # Simple text output
+            console.print(Panel.fit(
+                f"[bold green]✅ Task completed successfully[/]" if result.get("success") else f"[bold red]❌ Task failed: {result.get('error', 'Unknown error')}[/]",
+                title="IRAM Analysis Results"
+            ))
+            if result.get("success") and "result" in result:
+                console.print(Markdown(result['result']))
+
     except Exception as e:
-        logger.error(f"Task execution failed: {e}")
+        console.print(f"[bold red]❌ Task execution failed: {e}[/]")
         sys.exit(1)
 
 
@@ -92,13 +104,15 @@ Examples:
     server_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     
     # Run command
-    run_parser = subparsers.add_parser("run", help="Run a specific task")
-    run_parser.add_argument("--task", required=True, help="Task to execute")
-    run_parser.add_argument("--username", help="Instagram username (if applicable)")
-    run_parser.add_argument("--output", help="Output file path for results")
-    
-    # Config command
-    config_parser = subparsers.add_parser("config", help="Show configuration")
+    run_parser = subparsers.add_parser("run", help=\"Run a specific task\")
+    run_parser.add_argument("--task", required=True, help=\"Task to execute\")
+    run_parser.add_argument("--username", help=\"Instagram username (if applicable)\")
+    run_parser.add_argument("--output", help=\"Output file path for results (JSON)\")
+    run_parser.add_argument("--public-only", action="store_true", help=\"Run in public-only mode (no login required)\")
+    run_parser.add_argument("--rich-output", action="store_true", help=\"Enable rich, formatted output\")
+
+    # New command for interactive configuration
+    config_parser = subparsers.add_parser("configure", help=\"Interactively configure IRAM\")
     
     # Test command
     test_parser = subparsers.add_parser("test", help="Run basic tests")
@@ -125,7 +139,7 @@ Examples:
                 os.environ["DEBUG"] = "true"
             
             logger.info(f"Server will start on {os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT')}")
-            start_server()
+            run_dev_server()
             
         elif args.command == "run":
             asyncio.run(run_agent_task(args.task, args.username, args.output))
@@ -136,11 +150,70 @@ Examples:
         elif args.command == "test":
             run_tests()
             
+        elif args.command == "configure":
+            interactive_configure()
+            
     except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
+        console.print("\n[bold yellow]Operation cancelled by user.[/]")
     except Exception as e:
-        logger.error(f"Command failed: {e}")
+        console.print(f"[bold red]❌ Command failed: {e}[/]")
         sys.exit(1)
+
+
+def display_rich_results(result: dict):
+    """Display analysis results in a rich format."""
+    if not result.get("success"):
+        console.print(Panel.fit(f"[bold red]❌ Task failed: {result.get('error', 'Unknown error')}[/]"))
+        return
+
+    console.print(Panel.fit("[bold green]✅ IRAM Analysis Results[/]", title="Task Complete"))
+    
+    if "result" in result and isinstance(result["result"], str):
+        console.print(Markdown(result["result"]))
+    elif isinstance(result.get("result"), dict):
+        # For structured results, pretty-print the JSON
+        syntax = Syntax(json.dumps(result["result"], indent=2), "json", theme="monokai", line_numbers=True)
+        console.print(syntax)
+
+
+def prompt_for_credentials():
+    """Prompt user for Instagram credentials and save to .env."""
+    console.print("[bold yellow]Instagram credentials not found.[/]")
+    username = st.text_input("Enter your Instagram username:")
+    password = st.text_input("Enter your Instagram password:", type="password")
+    
+    if username and password:
+        with open(".env", "a") as f:
+            f.write(f"\nINSTAGRAM_USERNAME={username}")
+            f.write(f"\nINSTAGRAM_PASSWORD={password}")
+        console.print("[bold green]✅ Credentials saved to .env file.[/]")
+
+
+def interactive_configure():
+    """Interactively configure IRAM and save to .env."""
+    console.print(Panel.fit("[bold cyan]IRAM Interactive Configuration[/]"))
+
+    # Instagram credentials
+    if console.input("[bold]Configure Instagram credentials? (y/n):[/]").lower() == 'y':
+        username = console.input("Instagram Username: ")
+        password = getpass.getpass("Instagram Password: ")
+        with open(".env", "a") as f:
+            f.write(f"\nINSTAGRAM_USERNAME={username}")
+            f.write(f"\nINSTAGRAM_PASSWORD={password}")
+
+    # LLM Provider
+    console.print("\n[bold]LLM Provider Configuration[/]")
+    provider = console.input("Choose LLM provider (anthropic, openai, openrouter) [anthropic]: ").lower() or "anthropic"
+    api_key = getpass.getpass(f"Enter {provider.upper()} API Key: ")
+    with open(".env", "a") as f:
+        if provider == "anthropic":
+            f.write(f"\nANTHROPIC_API_KEY={api_key}")
+        elif provider == "openai":
+            f.write(f"\nOPENAI_API_KEY={api_key}")
+        elif provider == "openrouter":
+            f.write(f"\nOPENROUTER_API_KEY={api_key}")
+
+    console.print("[bold green]✅ Configuration saved to .env file.[/]")
 
 
 def show_config():
@@ -232,7 +305,21 @@ def run_tests():
             missing_items.append("OPENROUTER_API_KEY or OPENAI_API_KEY")
         print(f"❌ Missing environment variables: {', '.join(missing_items)}")
     
-    print(f"\nTests passed: {tests_passed}/{tests_total}")
+    # Test 5: Security check with safety
+    tests_total += 1
+    try:
+        import subprocess
+        result = subprocess.run(["safety", "check", "--full-report"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("✅ Security check (safety) passed")
+            tests_passed += 1
+        else:
+            print(f"❌ Security check (safety) failed:\n{result.stdout}")
+    except FileNotFoundError:
+        print("⚠️  `safety` command not found, skipping security check. Install with `pip install safety`.")
+        tests_total -= 1 # Don't count this test if safety is not installed
+    except Exception as e:
+        print(f"❌ Security check failed: {e}")
     
     if tests_passed == tests_total:
         print("🎉 All tests passed! IRAM is ready to use.")

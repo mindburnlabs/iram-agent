@@ -9,16 +9,19 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import logging
+import aiohttp
+from io import BytesIO
 
-# NLP imports - make them optional for minimal deployment
+# NLP imports
 try:
-    from transformers import pipeline, AutoTokenizer, AutoModel
+    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification, AutoModel
     import torch
+    from PIL import Image
     TRANSFORMERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
     print(f"Warning: Transformers not available: {e}. NLP will use basic fallback.")
     TRANSFORMERS_AVAILABLE = False
-    pipeline, AutoTokenizer, AutoModel, torch = None, None, None, None
+    pipeline, AutoTokenizer, AutoModel, torch, Image = None, None, None, None, None
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -28,18 +31,23 @@ except (ImportError, RuntimeError) as e:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
     SentenceTransformer = None
 
-# Try to import BERTopic, fallback if not available
 try:
     from bertopic import BERTopic
     BERTOPIC_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
-    print(f"Warning: BERTopic not available: {e}. Topic modeling will use fallback.")
+    print(f"Warning: BERTopic not available: {e}. Topic modeling disabled.")
     BERTOPIC_AVAILABLE = False
     BERTopic = None
 
-# Computer vision imports - disabled for minimal deployment
-# import cv2
-# from PIL import Image
+# Computer vision imports (CPU-friendly)
+try:
+    # Using a smaller, CPU-friendly object detection model
+    from transformers import DetrImageProcessor, DetrForObjectDetection
+    CV_AVAILABLE = True
+except (ImportError, RuntimeError) as e:
+    print(f"Warning: Computer Vision models not available: {e}. CV analysis disabled.")
+    CV_AVAILABLE = False
+    DetrImageProcessor, DetrForObjectDetection = None, None
 
 # Data processing
 import pandas as pd
@@ -61,6 +69,15 @@ class ContentAnalyzer:
         
         # Initialize CV models
         self._init_cv_models()
+        
+        # Initialize CLIP model for similarity search
+        self.clip_model = None
+        self.clip_processor = None
+        if SENTENCE_TRANSFORMERS_AVAILABLE:
+            try:
+                self.clip_model = SentenceTransformer('clip-ViT-B-32')
+            except Exception as e:
+                logger.warning(f"Failed to load CLIP model: {e}")
         
         logger.info("Content analyzer initialized")
     
@@ -96,15 +113,15 @@ class ContentAnalyzer:
     
     def _init_cv_models(self):
         """Initialize computer vision models."""
-        try:
-            # Object detection would be initialized here
-            # For now, we'll use basic image processing
-            self.cv_models_loaded = True
-            logger.info("CV models initialized")
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize CV models: {e}")
-            self.cv_models_loaded = False
+        self.cv_models_loaded = False
+        if CV_AVAILABLE:
+            try:
+                self.object_detection_processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
+                self.object_detection_model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+                self.cv_models_loaded = True
+                logger.info("Computer Vision models (DETR) loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize CV models: {e}")
     
     def analyze_sentiment(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze sentiment of text content."""
@@ -503,25 +520,46 @@ class ContentAnalyzer:
                 "analyzed_at": datetime.utcnow().isoformat()
             }
             
-            # Sentiment analysis
-            sentiment_result = self.analyze_sentiment(data)
-            if "error" not in sentiment_result:
-                results["sentiment_analysis"] = sentiment_result
-            
-            # Topic extraction
-            topics_result = self.extract_topics(data)
-            if "error" not in topics_result:
-                results["topic_analysis"] = topics_result
-            
-            # Engagement analysis
+            # --- Text-based analysis ---
+            texts = self._extract_texts(data)
+            if texts:
+                # Sentiment analysis
+                sentiment_result = self.analyze_sentiment(texts)
+                if "error" not in sentiment_result:
+                    results["sentiment_analysis"] = sentiment_result
+                
+                # Topic extraction
+                topics_result = self.extract_topics(texts)
+                if "error" not in topics_result:
+                    results["topic_analysis"] = topics_result
+                
+                # Hashtag analysis
+                hashtag_result = self.analyze_hashtags(texts)
+                if "error" not in hashtag_result:
+                    results["hashtag_analysis"] = hashtag_result
+
+            # --- Engagement analysis ---
             engagement_result = self.analyze_engagement(data)
             if "error" not in engagement_result:
                 results["engagement_analysis"] = engagement_result
             
-            # Hashtag analysis
-            hashtag_result = self.analyze_hashtags(data)
-            if "error" not in hashtag_result:
-                results["hashtag_analysis"] = hashtag_result
+            # --- Image analysis (if applicable) ---
+            if self.cv_models_loaded and "posts" in data:
+                image_analysis_results = []
+                for post in data["posts"]:
+                    if post.get("media_type") == 1 and post.get("thumbnail_url"):
+                        try:
+                            image_res = await self.analyze_image_content(post["thumbnail_url"])
+                            if "error" not in image_res:
+                                image_analysis_results.append({
+                                    "post_id": post.get("id"),
+                                    "image_analysis": image_res
+                                })
+                        except Exception as e:
+                            logger.warning(f"Image analysis failed for post {post.get('id')}: {e}")
+                
+                if image_analysis_results:
+                    results["image_analysis"] = image_analysis_results
             
             # Generate insights
             insights = self._generate_insights(results)
@@ -577,3 +615,62 @@ class ContentAnalyzer:
         except Exception as e:
             logger.error(f"Insight generation failed: {e}")
             return ["Unable to generate insights"]
+
+    async def analyze_image_content(self, image_url: str) -> Dict[str, Any]:
+        """Analyze image content for objects and themes."""
+        try:
+            if not self.cv_models_loaded:
+                return {"error": "Computer vision models not available"}
+
+            # Download image
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as response:
+                    if response.status != 200:
+                        return {"error": f"Failed to download image: status {response.status}"}
+                    image_bytes = await response.read()
+            
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+
+            # Object detection
+            inputs = self.object_detection_processor(images=image, return_tensors="pt")
+            outputs = self.object_detection_model(**inputs)
+            
+            # Process results
+            target_sizes = torch.tensor([image.size[::-1]])
+            results = self.object_detection_processor.post_process_object_detection(
+                outputs, target_sizes=target_sizes, threshold=0.8
+            )[0]
+
+            detected_objects = []
+            for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
+                box = [round(i, 2) for i in box.tolist()]
+                detected_objects.append({
+                    "label": self.object_detection_model.config.id2label[label.item()],
+                    "confidence": round(score.item(), 3),
+                    "box": box
+                })
+
+            # Image-text similarity (CLIP)
+            clip_insights = {}
+            if self.clip_model:
+                text_queries = ["a person", "a landscape", "a product", "food", "an animal"]
+                image_embedding = self.clip_model.encode(image, convert_to_tensor=True)
+                text_embeddings = self.clip_model.encode(text_queries, convert_to_tensor=True)
+                
+                # Calculate similarity
+                similarities = util.pytorch_cos_sim(image_embedding, text_embeddings)
+                clip_insights = {
+                    "query": text_queries,
+                    "similarities": similarities.tolist()[0]
+                }
+
+            return {
+                "analysis_type": "image_content",
+                "detected_objects": detected_objects,
+                "clip_similarity": clip_insights,
+                "analyzed_at": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Image analysis failed: {e}")
+            return {"error": str(e)}

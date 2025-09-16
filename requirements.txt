@@ -1,26 +1,72 @@
-# Minimal requirements for basic deployment
+# === CORE FRAMEWORK ===
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-python-dotenv==1.0.0
+uvicorn[standard]==0.24.0.post1
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
 
+# === WEB SCRAPING & CONTENT EXTRACTION ===
+# Latest Firecrawl SDK with v2.2.0 features
+firecrawl-py>=0.0.20
 # Instagram scraping
-instagrapi==1.19.8
-playwright==1.40.0
+instagrapi>=1.19.8
+playwright>=1.40.0
+requests>=2.31.0
+# Enhanced scraping features
+fake-useragent>=1.4.0
+aiohttp>=3.8.0
+Pillow>=10.0.0
+playwright-stealth>=1.0.6
 
-# Basic analysis
-pandas==2.1.4
-numpy==1.25.2
-requests==2.31.0
+# === AI & LLM INTEGRATION ===
+langchain>=0.1.0
+langchain-openai>=0.1.4
+langchain-anthropic>=0.1.4
+langchain-community>=0.0.38
+langchain-core>=0.1.52
+langgraph>=0.0.65
+anthropic>=0.34.0
+openai>=1.12.0
 
-# LLM integration
-langchain==0.1.0
-langchain-openai==0.0.2
-langchain-community==0.0.10
+# === DATA PROCESSING & ANALYSIS ===
+pandas>=2.1.4
+numpy>=1.25.0
+scikit-learn>=1.3.0
+# NLP & ML (optional, graceful fallback)
+transformers>=4.36.0
+sentence-transformers>=2.2.2
+torch>=2.1.0
+timm>=0.9.12
+# Topic modeling (optional)
+bertopic>=0.16.0
 
-# Utilities
-python-multipart==0.0.6
+# === DATABASE & CACHING ===
+# Redis (with graceful fallback)
+redis>=5.0.0
+# Database
+SQLAlchemy>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.0
+# Vector Store
+faiss-cpu>=1.7.4
 
-# Persistence
-SQLAlchemy==2.0.30
-asyncpg==0.29.0
+# === BACKGROUND JOBS & SCHEDULING ===
+apscheduler>=3.10.4
+schedule>=1.2.0
+packaging>=23.0
+
+# === AUTHENTICATION & SECURITY ===
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+safety>=2.3.5
+
+# === MONITORING & LOGGING ===
+structlog>=23.2.0
+
+# === DEVELOPMENT & TESTING ===
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0
+streamlit>=1.30.0
+rich>=13.7.0

@@ -64,3 +64,22 @@ async def create_all() -> bool:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     return True
+
+
+async def init_database():
+    """Initialize database and create tables if needed."""
+    await create_all()
+
+
+async def close_database():
+    """Close database connections."""
+    global _engine
+    if _engine:
+        await _engine.dispose()
+        _engine = None
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Dependency to get database session."""
+    async with session_scope() as session:
+        yield session

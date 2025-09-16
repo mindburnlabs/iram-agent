@@ -23,6 +23,7 @@ A comprehensive, autonomous AI agent system for researching, downloading, scrapi
 - Docker containerization
 - Playwright browser automation fallback
 - Instagram private API integration (Instagrapi)
+- Firecrawl v2.2.0 integration for advanced web scraping
 - Proxy rotation and session management
 - Comprehensive error handling and logging
 
@@ -32,7 +33,7 @@ A comprehensive, autonomous AI agent system for researching, downloading, scrapi
 - Docker (optional)
 - Instagram account credentials (for private content)
 - OpenAI API key
-- SerpAPI key (optional, for web search)
+- Firecrawl API key (for advanced web scraping and search)
 
 ## 🛠 Installation
 
@@ -84,8 +85,8 @@ FACEBOOK_APP_SECRET=your_facebook_app_secret
 INSTAGRAM_ACCESS_TOKEN=your_long_lived_access_token
 INSTAGRAM_BUSINESS_ACCOUNT_ID=your_instagram_business_account_id
 
-# Optional: Search API
-SERPAPI_API_KEY=your_serpapi_key
+# Web Scraping API (Firecrawl v2.2.0)
+FIRECRAWL_API_KEY=your_firecrawl_api_key
 ```
 
 ## 🎯 Usage
