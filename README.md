@@ -248,6 +248,8 @@ docker run -d -p 8000:8000 --env-file .env --name iram-agent iram-agent:latest
 3. Make changes with tests
 4. Submit a pull request
 
+Comprehensive engineering guidelines live in [`AGENTS.md`](AGENTS.md); review them before opening a pull request.
+
 ## 📝 License
 
 This project is for educational and research purposes. Ensure compliance with Instagram's Terms of Service and applicable laws.
