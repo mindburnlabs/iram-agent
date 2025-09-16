@@ -11,13 +11,11 @@ python-multipart>=0.0.6
 firecrawl-py>=0.0.20
 # Instagram scraping
 instagrapi>=1.19.8
-playwright>=1.40.0
 requests>=2.31.0
 # Enhanced scraping features
 fake-useragent>=1.4.0
 aiohttp>=3.8.0
 Pillow>=10.0.0
-playwright-stealth>=1.0.6
 
 # === AI & LLM INTEGRATION ===
 langchain>=0.1.0

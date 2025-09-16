@@ -16,7 +16,6 @@ from collections import deque
 import logging
 
 from .utils import get_logger
-from .scraping_module import ProxyManager
 
 logger = get_logger(__name__)
 
@@ -39,8 +38,14 @@ class EvasionManager:
         self.scaler = StandardScaler()
         self.model_trained = False
         
-        # Proxy manager (if available)
-        self.proxy_manager = ProxyManager(config) if self.config.get("enable_proxy_rotation") else None
+        # Proxy manager (if available) - lazy import to avoid circular dependency
+        self.proxy_manager = None
+        if self.config.get("enable_proxy_rotation"):
+            try:
+                from .scraping_module import ProxyManager
+                self.proxy_manager = ProxyManager(config)
+            except ImportError as e:
+                logger.warning(f"Could not import ProxyManager: {e}")
         
         # Adaptive backoff parameters
         self.base_delay = 2.0

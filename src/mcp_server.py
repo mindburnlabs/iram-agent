@@ -206,8 +206,7 @@ app.add_middleware(RequestTracingMiddleware)
 if config.features.enable_rate_limiting:
     app.add_middleware(
         RateLimitingMiddleware,
-        requests_per_minute=config.server.rate_limit_per_minute,
-        burst_limit=config.server.rate_limit_burst
+        config_name="api_per_ip"
     )
 
 # Error handling middleware

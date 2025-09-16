@@ -12,7 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..config import get_config
 from ..logging_config import get_logger
-from ..mcp_server import get_agent as _get_agent
+# from ..mcp_server import get_agent as _get_agent  # Circular import
 from .models import User
 
 logger = get_logger(__name__)
@@ -37,6 +37,8 @@ class MockUser:
 
 def get_agent():
     """Get the agent orchestrator dependency (wrapper for MCP server function)."""
+    # Lazy import to avoid circular dependency
+    from ..mcp_server import get_agent as _get_agent
     return _get_agent()
 
 

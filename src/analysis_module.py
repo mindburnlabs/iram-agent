@@ -549,12 +549,14 @@ class ContentAnalyzer:
                 for post in data["posts"]:
                     if post.get("media_type") == 1 and post.get("thumbnail_url"):
                         try:
-                            image_res = await self.analyze_image_content(post["thumbnail_url"])
-                            if "error" not in image_res:
-                                image_analysis_results.append({
-                                    "post_id": post.get("id"),
-                                    "image_analysis": image_res
-                                })
+                            # Skip async image analysis in sync function for now
+                            # image_res = await self.analyze_image_content(post["thumbnail_url"])
+                            # if "error" not in image_res:
+                            #     image_analysis_results.append({
+                            #         "post_id": post.get("id"),
+                            #         "image_analysis": image_res
+                            #     })
+                            logger.info(f"Image analysis skipped for post {post.get('id')} - async required")
                         except Exception as e:
                             logger.warning(f"Image analysis failed for post {post.get('id')}: {e}")
                 

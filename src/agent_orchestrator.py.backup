@@ -473,7 +473,7 @@ Available tools:
 - semantic_search: For searching previously collected and indexed data
 - firecrawl_research: For performing web research, including searches and scraping URLs
 
-Remember to be thorough, accurate, and insightful in your analysis."""
+Remember to be thorough, accurate, and insightful in your analysis.
         
         # Create the ReAct agent using LangGraph
         return create_react_agent(
@@ -565,7 +565,7 @@ Remember to be thorough, accurate, and insightful in your analysis."""
         Steps to complete:
         1. Research and scrape profile information for each account
         2. Scrape recent posts from each account (last 50 posts)
-        3. Analyze each account content strategy, engagement, and audience
+        3. Analyze each account's content strategy, engagement, and audience
         4. Generate a comparative analysis report
         
         Compare:
@@ -580,9 +580,8 @@ Remember to be thorough, accurate, and insightful in your analysis."""
     
     def research_hashtag_trends(self, hashtags: List[str]) -> Dict[str, Any]:
         """Research trends for specific hashtags."""
-        hashtags_str = ', '.join(hashtags)
         task = f"""
-        Research hashtag trends for: {hashtags_str}
+        Research hashtag trends for: {', '.join(hashtags)}
         
         Steps to complete:
         1. Research each hashtag to understand its usage and context

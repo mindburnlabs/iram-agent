@@ -22,14 +22,20 @@ import socket
 
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, PleaseWaitFewMinutes, UserNotFound
-from playwright.async_api import async_playwright
 import requests
 from fake_useragent import UserAgent
 
 from .evasion_manager import EvasionManager
 from .utils import get_logger, validate_instagram_username
 
-from playwright_stealth import stealth_async
+# Optional Playwright imports - graceful fallback if not available
+try:
+    from playwright.async_api import async_playwright
+    from playwright_stealth import stealth
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.warning("Playwright not available - browser-based scraping disabled")
 
 logger = get_logger(__name__)
 

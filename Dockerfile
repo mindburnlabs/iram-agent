@@ -28,18 +28,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright dependencies
-RUN apt-get update && apt-get install -y \
-    libnss3-dev \
-    libatk-bridge2.0-dev \
-    libdrm-dev \
-    libxcomposite-dev \
-    libxdamage-dev \
-    libxrandr-dev \
-    libgbm-dev \
-    libxss-dev \
-    libasound2-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Playwright dependencies removed to avoid build issues
 
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt .
@@ -48,16 +37,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (only if Playwright is installed)
-RUN python - <<'PY'
-import importlib.util, os, subprocess, sys
-spec = importlib.util.find_spec('playwright')
-if spec is not None:
-    print('Playwright detected, installing Chromium...')
-    subprocess.check_call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
-else:
-    print('Playwright not installed, skipping browser installation')
-PY
+# Skip Playwright browser installation to avoid Node.js dependency issues
+# Browsers can be installed at runtime if needed
+RUN echo 'Skipping Playwright browser installation to avoid build issues'
 
 # Copy the application code
 COPY . .
@@ -82,7 +64,7 @@ EXPOSE 8000
 
 # Health check to probe dynamic port (use /health which exists in all modes)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD sh -lc 'curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1'
+    CMD curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1
 
 # Default command - run full MCP server via uvicorn (respects dynamic PORT)
-CMD ["sh", "-lc", "uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}"]

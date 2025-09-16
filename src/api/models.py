@@ -133,7 +133,7 @@ class ProfileAnalysisRequest(BaseModel):
         ...,
         min_length=1,
         max_length=30,
-        regex=r'^[a-zA-Z0-9._]+$',
+        pattern=r'^[a-zA-Z0-9._]+$',
         description="Instagram username (without @ symbol)",
         example="example_user"
     )
