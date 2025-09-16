@@ -3,15 +3,12 @@ builder = "dockerfile"
 dockerfile = "Dockerfile"
 
 [deploy]
-start_command = "python main.py server"
-healthcheck_path = "/health"
+start_command = "sh -lc 'uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}'"
+healthcheck_path = "/live"
 healthcheck_timeout = 30
 
 [variables]
 ENVIRONMENT = "production"
-HOST = "0.0.0.0"
-PORT = "8000"
 LOG_LEVEL = "INFO"
 
-[services]
-iram-mcp-server = { build = { builder = "dockerfile" }, deploy = { start_command = "python main.py server" } }
+# services section not required for single service dockerfile builds
