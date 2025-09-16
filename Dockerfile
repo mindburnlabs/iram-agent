@@ -31,11 +31,11 @@ RUN apt-get update && apt-get install -y \
 # Playwright dependencies removed to avoid build issues
 
 # Copy requirements first for better Docker layer caching
-COPY requirements.txt .
+COPY requirements.minimal.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.minimal.txt
 
 # Skip Playwright browser installation to avoid Node.js dependency issues
 # Browsers can be installed at runtime if needed
@@ -49,7 +49,7 @@ RUN mkdir -p logs data cache /tmp/numba_cache /tmp/matplotlib && \
     chmod -R 777 /tmp/numba_cache /tmp/matplotlib /tmp
 
 # Set proper permissions
-RUN chmod +x main.py main_minimal.py
+RUN chmod +x main.py
 
 # Create a non-root user for security (skip if already exists)
 RUN (groupadd -r iram 2>/dev/null || true) && \

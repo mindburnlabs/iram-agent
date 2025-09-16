@@ -1,0 +1,37 @@
+# Minimal Dockerfile for debugging the nom executable issue
+FROM python:3.11-slim-bookworm
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (minimal set)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create minimal requirements
+RUN echo "fastapi==0.104.1" > /tmp/minimal_requirements.txt && \
+    echo "uvicorn[standard]==0.24.0.post1" >> /tmp/minimal_requirements.txt && \
+    echo "pydantic>=2.5.0" >> /tmp/minimal_requirements.txt && \
+    echo "python-dotenv>=1.0.0" >> /tmp/minimal_requirements.txt
+
+# Install minimal Python dependencies
+RUN pip install --no-cache-dir -r /tmp/minimal_requirements.txt
+
+# Copy only essential source files
+COPY src/config.py src/config.py
+COPY src/utils.py src/utils.py
+COPY src/logging_config.py src/logging_config.py
+
+# Create a minimal app
+RUN echo 'from fastapi import FastAPI; \
+app = FastAPI(); \
+@app.get("/health"); \
+def health(): return {"status": "healthy"}' > src/minimal_app.py
+
+# Expose port
+EXPOSE 8000
+
+# Use the same command as Railway
+CMD ["sh", "-c", "uvicorn src.minimal_app:app --host 0.0.0.0 --port ${PORT:-8000}"]
