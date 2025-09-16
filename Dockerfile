@@ -79,9 +79,9 @@ RUN groupadd -r iram && useradd -r -g iram iram && \
 # Expose port
 EXPOSE 8000
 
-# Health check to probe dynamic port
+# Health check to probe dynamic port (use /health which exists in all modes)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD sh -lc 'curl -fsS "http://localhost:${PORT:-8000}/live" || exit 1'
+    CMD sh -lc 'curl -fsS "http://localhost:${PORT:-8000}/health" || exit 1'
 
 # Default command - run full MCP server via uvicorn (respects dynamic PORT)
 CMD ["sh", "-lc", "uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -4,7 +4,7 @@ dockerfile = "Dockerfile"
 
 [deploy]
 start_command = "sh -lc 'uvicorn src.mcp_server:app --host 0.0.0.0 --port ${PORT:-8000}'"
-healthcheck_path = "/live"
+healthcheck_path = "/health"
 healthcheck_timeout = 30
 
 [variables]
